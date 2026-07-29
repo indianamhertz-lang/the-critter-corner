@@ -24,18 +24,12 @@ import {
   Bug,
 } from "lucide-react";
 import { storage } from "./storage";
+import { CATALOG, CATALOG_VERSION } from "./catalog";
 
 // Change this to whatever PIN you want to use for your private manage page.
 const ADMIN_PIN = "crittercorner2319";
 const PAY_LABELS = { venmo: "Venmo", paypal: "PayPal", card: "Card" };
 const LOW_STOCK_THRESHOLD = 3;
-
-const SEED_PRODUCTS = [
-  { id: "p1", name: "Bees - Blue", price: 14, blurb: "", photo: null, bg: "#FFE9B3", stock: 5 },
-  { id: "p2", name: "Bees - Pink", price: 14, blurb: "", photo: null, bg: "#FBD8E0", stock: 5 },
-  { id: "p3", name: "Leggy Frog - Light Green", price: 7, blurb: "", photo: null, bg: "#DCEEDB", stock: 5 },
-  { id: "p4", name: "Leggy Frog - Dark Green", price: 7, blurb: "", photo: null, bg: "#C3DFC0", stock: 5 },
-];
 
 const ACCENT_COLORS = ["#4F7A3D", "#D9A441", "#E8927C", "#7FA8C9", "#B79FD1", "#5FA88A"];
 
@@ -192,22 +186,42 @@ export default function App() {
   const { items: orders, loading: ordersLoading, refresh: refreshOrders } = useCollection("order:");
   const seeded = useRef(false);
 
-  // Seed default products once, only if the store is empty.
+  // Load the catalog into storage on first visit, and again whenever the
+  // catalog changes. Stock counts already saved are kept so a re-seed doesn't
+  // wipe out sales, but names, prices and photos follow the catalog.
   useEffect(() => {
-    if (!productsLoading && products.length === 0 && !seeded.current) {
-      seeded.current = true;
-      (async () => {
-        for (const p of SEED_PRODUCTS) {
+    if (productsLoading || seeded.current) return;
+    seeded.current = true;
+    (async () => {
+      const seededVersion = (await storage.get("meta:catalogVersion"))?.value;
+      if (seededVersion === CATALOG_VERSION && products.length > 0) return;
+
+      const existing = new Map(products.map((p) => [p.id, p]));
+      for (const p of CATALOG) {
+        const prev = existing.get(p.id);
+        try {
+          await storage.set(
+            `product:${p.id}`,
+            JSON.stringify({ ...p, stock: prev?.stock ?? p.stock, createdAt: prev?.createdAt ?? Date.now() })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      // Drop anything left over from an older catalog.
+      for (const p of products) {
+        if (!CATALOG.some((c) => c.id === p.id)) {
           try {
-            await storage.set(`product:${p.id}`, JSON.stringify({ ...p, createdAt: Date.now() }));
+            await storage.delete(`product:${p.id}`);
           } catch {
             /* ignore */
           }
         }
-        refreshProducts();
-      })();
-    }
-  }, [productsLoading, products.length, refreshProducts]);
+      }
+      await storage.set("meta:catalogVersion", CATALOG_VERSION);
+      refreshProducts();
+    })();
+  }, [productsLoading, products, refreshProducts]);
 
   const cartItems = Object.entries(cart)
     .filter(([, qty]) => qty > 0)
