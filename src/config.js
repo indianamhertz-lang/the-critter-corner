@@ -1,24 +1,26 @@
 // ---------------------------------------------------------------------------
 // Where your orders get emailed
 // ---------------------------------------------------------------------------
-// One-time setup, takes about a minute:
+// Orders are emailed to the address below using FormSubmit, which needs no
+// account, no password and no key.
 //
-//   1. Go to https://web3forms.com
-//   2. Type in  indianamhertz@gmail.com  (use the Gmail address — orders are
-//      emailed to whichever address you enter here, so don't use an iCloud/Mac
-//      Mail address unless you want them going there)
-//   3. They email you an "access key" that looks like
-//      a1b2c3d4-1234-5678-9abc-def012345678
-//   4. Paste it between the quotes below, then save this file
-//   5. Publish it:   npm run build   then commit and push
+// ONE-TIME ACTIVATION — you only ever do this once:
+//   1. Go to the live site and place a test order (add anything to the cart
+//      and hit "Send order").
+//   2. FormSubmit emails indianamhertz@gmail.com asking you to confirm.
+//      Open it and click the activation link. Check spam if it isn't there.
+//   3. That's it. Every order from then on lands in your Gmail.
 //
-// Until the key is filled in, orders are NOT emailed to you — the Manage page
-// will show a red warning so you know. It's free for 250 orders a month.
-//
-// This key is safe to have in the code; Web3Forms keys are meant for public
-// web pages and can only send mail to your own registered address.
+// Until you click that link, orders will NOT reach you — the Manage page shows
+// a red warning so you always know the state.
 
-export const WEB3FORMS_KEY = "";
+export const ORDER_EMAIL = "indianamhertz@gmail.com";
+
+// Optional, recommended later: after activating, FormSubmit gives you a random
+// code you can use instead of your email address. Paste it here and your real
+// email stops being visible in the website's code, which cuts down on spam.
+// Leave it empty to just use the address above.
+export const FORMSUBMIT_ALIAS = "";
 
 // Shown to customers on the order confirmation.
 export const OWNER_NAME = "Indiana";

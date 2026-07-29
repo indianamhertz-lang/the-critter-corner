@@ -26,6 +26,7 @@ import {
 import { storage } from "./storage";
 import { CATALOG, CATALOG_VERSION } from "./catalog";
 import { emailOrder, emailConfigured } from "./sendOrder";
+import { ORDER_EMAIL } from "./config";
 
 // Change this to whatever PIN you want to use for your private manage page.
 const ADMIN_PIN = "crittercorner2319";
@@ -1003,8 +1004,20 @@ function OrdersTab({ orders, loading, onToggle, onRefresh }) {
             Orders are not being emailed to you yet
           </p>
           <p className="font-body text-xs font-medium" style={{ color: "#8A5B4C" }}>
-            Right now an order is only saved on the customer's own device, so you won't see it. Open
-            src/config.js and follow the setup steps to have orders emailed to your Gmail.
+            No email address is set. Open src/config.js and fill in ORDER_EMAIL, or orders will only
+            ever be saved on the customer's own device.
+          </p>
+        </div>
+      )}
+      {emailConfigured() && orders.length === 0 && (
+        <div className="rounded-xl border-2 p-3 mb-4" style={{ borderColor: "#D9A441", background: "#FDF4E0" }}>
+          <p className="font-body text-xs font-bold mb-1" style={{ color: "#8A6A20" }}>
+            First time? Activate your order emails
+          </p>
+          <p className="font-body text-xs font-medium" style={{ color: "#7A6540" }}>
+            Place one test order on the shop, then check {ORDER_EMAIL} for a confirmation email from
+            FormSubmit and click the link inside (check spam too). Until you do that once, orders
+            won't arrive in your inbox.
           </p>
         </div>
       )}
