@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { storage } from "./storage";
 import { CATALOG, CATALOG_VERSION } from "./catalog";
+import { emailOrder, emailConfigured } from "./sendOrder";
 
 // Change this to whatever PIN you want to use for your private manage page.
 const ADMIN_PIN = "crittercorner2319";
@@ -268,7 +269,15 @@ export default function App() {
       status: "new",
     };
     try {
-      const res = await storage.set(`order:${order.id}`, JSON.stringify(order));
+      // Email it first — that's the copy Indiana actually receives. A saved
+      // order nobody sees is worse than telling the customer to try again.
+      const emailed = await emailOrder(order);
+      if (!emailed && emailConfigured()) {
+        setError("We couldn't send your order just now — please check your connection and try again.");
+        setSubmitting(false);
+        return;
+      }
+      const res = await storage.set(`order:${order.id}`, JSON.stringify({ ...order, emailed }));
       if (!res) throw new Error("save failed");
       // Decrease stock for each item ordered.
       for (const item of cartItems) {
@@ -543,6 +552,10 @@ export default function App() {
                     <span>Total</span>
                     <span>${cartTotal.toFixed(2)}</span>
                   </div>
+                  <p className="font-body text-xs font-medium" style={{ color: "#8A7C6A" }}>
+                    Handmade note: every critter is crocheted by hand, so the size, shape and color
+                    of yours will vary slightly from the photo.
+                  </p>
                   {error && (
                     <p className="font-body text-xs font-semibold" style={{ color: "#C4553E" }}>
                       {error}
@@ -642,6 +655,8 @@ function HomeView({ products, onShopNow }) {
             Good to know
           </p>
           <ul className="font-body text-sm font-medium space-y-1.5" style={{ color: "#6B5C4C" }}>
+            <li>• Everything is made by hand, so sizes, colors and shapes vary a little from piece to piece — no two are exactly alike.</li>
+            <li>• Photos show an example of each critter, not the exact one you'll receive.</li>
             <li>• Everything ships by mail.</li>
             <li>• Sold-out items may come back in stock — check back!</li>
           </ul>
@@ -661,6 +676,10 @@ function ShopView({ products, loading, onAdd }) {
         </h2>
         <p className="font-body text-sm font-medium mt-1" style={{ color: "#6B5C4C" }}>
           Tap "Add" to send one home with you.
+        </p>
+        <p className="font-body text-xs font-medium mt-3 max-w-md mx-auto relative z-10" style={{ color: "#8A7C6A" }}>
+          Every piece is crocheted by hand, so sizes and colors vary slightly — yours will be
+          one of a kind, not identical to the photo.
         </p>
       </section>
 
@@ -978,6 +997,17 @@ function OrdersTab({ orders, loading, onToggle, onRefresh }) {
 
   return (
     <div>
+      {!emailConfigured() && (
+        <div className="rounded-xl border-2 p-3 mb-4" style={{ borderColor: "#C4553E", background: "#FDEDE7" }}>
+          <p className="font-body text-xs font-bold mb-1" style={{ color: "#C4553E" }}>
+            Orders are not being emailed to you yet
+          </p>
+          <p className="font-body text-xs font-medium" style={{ color: "#8A5B4C" }}>
+            Right now an order is only saved on the customer's own device, so you won't see it. Open
+            src/config.js and follow the setup steps to have orders emailed to your Gmail.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <p className="font-body text-xs font-medium" style={{ color: "#8A7C6A" }}>
           {orders.length} total · ${revenue.toFixed(2)} lifetime
