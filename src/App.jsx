@@ -189,8 +189,9 @@ export default function App() {
   const seeded = useRef(false);
 
   // Load the catalog into storage on first visit, and again whenever the
-  // catalog changes. Stock counts already saved are kept so a re-seed doesn't
-  // wipe out sales, but names, prices and photos follow the catalog.
+  // catalog version changes. A version bump means Indiana deliberately edited
+  // prices or stock, so the catalog wins outright — otherwise old numbers
+  // cached in a browser would quietly override the new ones.
   useEffect(() => {
     if (productsLoading || seeded.current) return;
     seeded.current = true;
@@ -204,7 +205,7 @@ export default function App() {
         try {
           await storage.set(
             `product:${p.id}`,
-            JSON.stringify({ ...p, stock: prev?.stock ?? p.stock, createdAt: prev?.createdAt ?? Date.now() })
+            JSON.stringify({ ...p, createdAt: prev?.createdAt ?? Date.now() })
           );
         } catch {
           /* ignore */
