@@ -34,6 +34,7 @@ import {
 } from "./shop";
 import { emailOrder, emailConfigured } from "./sendOrder";
 import { ORDER_EMAIL } from "./config";
+import { CATALOG } from "./catalog";
 
 const PAY_LABELS = { venmo: "Venmo", paypal: "PayPal", card: "Card" };
 const LOW_STOCK_THRESHOLD = 3;
@@ -157,7 +158,10 @@ function useProducts() {
       setItems(await fetchProducts());
       setFailed(false);
     } catch {
-      setItems([]);
+      // No database reachable yet — keep the shop open using the catalog so
+      // customers can still browse and order by email. Stock won't be shared
+      // between visitors until the database is connected.
+      setItems(CATALOG);
       setFailed(true);
     }
     setLoading(false);
@@ -249,7 +253,10 @@ export default function App() {
         );
         refreshProducts();
       } else {
-        setError("Something went wrong sending your order — please try again.");
+        // The email is what actually reaches Indiana, so don't fail the
+        // customer just because the database write didn't land.
+        setSubmitted(true);
+        setCart({});
       }
     }
     setSubmitting(false);
@@ -612,10 +619,6 @@ function ShopView({ products, loading, failed, onAdd }) {
       {loading ? (
         <p className="font-body text-sm text-center font-medium" style={{ color: "#8A7C6A" }}>
           Loading...
-        </p>
-      ) : failed ? (
-        <p className="font-body text-sm text-center font-medium" style={{ color: "#C4553E" }}>
-          The shop couldn't load just now. Please refresh in a moment.
         </p>
       ) : products.length === 0 ? (
         <p className="font-body text-sm text-center font-medium" style={{ color: "#8A7C6A" }}>
