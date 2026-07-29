@@ -23,13 +23,18 @@ import {
   Dog,
   Bug,
 } from "lucide-react";
-import { storage } from "./storage";
-import { CATALOG, CATALOG_VERSION } from "./catalog";
+import {
+  fetchProducts,
+  fetchOrders,
+  placeOrder,
+  setOrderStatus,
+  saveProduct,
+  deleteProduct,
+  checkPin,
+} from "./shop";
 import { emailOrder, emailConfigured } from "./sendOrder";
 import { ORDER_EMAIL } from "./config";
 
-// Change this to whatever PIN you want to use for your private manage page.
-const ADMIN_PIN = "crittercorner2319";
 const PAY_LABELS = { venmo: "Venmo", paypal: "PayPal", card: "Card" };
 const LOW_STOCK_THRESHOLD = 3;
 
@@ -141,37 +146,28 @@ const MANAGE_SPOTS = [
   { top: "3%", right: "3%", rotate: 15, size: 16, kind: "critter" },
 ];
 
-function useCollection(prefix) {
+function useProducts() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const listRes = await storage.list(prefix);
-      const keys = listRes?.keys || [];
-      const values = await Promise.all(
-        keys.map(async (k) => {
-          try {
-            const r = await storage.get(k);
-            return r ? JSON.parse(r.value) : null;
-          } catch {
-            return null;
-          }
-        })
-      );
-      setItems(values.filter(Boolean).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+      setItems(await fetchProducts());
+      setFailed(false);
     } catch {
       setItems([]);
+      setFailed(true);
     }
     setLoading(false);
-  }, [prefix]);
+  }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { items, loading, refresh };
+  return { items, loading, failed, refresh };
 }
 
 export default function App() {
@@ -184,47 +180,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [form, setForm] = useState({ name: "", contact: "", payMethod: "venmo", delivery: "mail", notes: "" });
 
-  const { items: products, loading: productsLoading, refresh: refreshProducts } = useCollection("product:");
-  const { items: orders, loading: ordersLoading, refresh: refreshOrders } = useCollection("order:");
-  const seeded = useRef(false);
-
-  // Load the catalog into storage on first visit, and again whenever the
-  // catalog version changes. A version bump means Indiana deliberately edited
-  // prices or stock, so the catalog wins outright — otherwise old numbers
-  // cached in a browser would quietly override the new ones.
-  useEffect(() => {
-    if (productsLoading || seeded.current) return;
-    seeded.current = true;
-    (async () => {
-      const seededVersion = (await storage.get("meta:catalogVersion"))?.value;
-      if (seededVersion === CATALOG_VERSION && products.length > 0) return;
-
-      const existing = new Map(products.map((p) => [p.id, p]));
-      for (const p of CATALOG) {
-        const prev = existing.get(p.id);
-        try {
-          await storage.set(
-            `product:${p.id}`,
-            JSON.stringify({ ...p, createdAt: prev?.createdAt ?? Date.now() })
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-      // Drop anything left over from an older catalog.
-      for (const p of products) {
-        if (!CATALOG.some((c) => c.id === p.id)) {
-          try {
-            await storage.delete(`product:${p.id}`);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-      await storage.set("meta:catalogVersion", CATALOG_VERSION);
-      refreshProducts();
-    })();
-  }, [productsLoading, products, refreshProducts]);
+  // Products, stock and orders all live in the shared database now, so the
+  // catalog is loaded server-side and every visitor sees the same numbers.
+  const { items: products, loading: productsLoading, failed: productsFailed, refresh: refreshProducts } = useProducts();
 
   const cartItems = Object.entries(cart)
     .filter(([, qty]) => qty > 0)
@@ -275,48 +233,26 @@ export default function App() {
       // always accepted. If the email didn't go through it's flagged on the
       // order so the Manage page can surface it instead.
       const emailed = await emailOrder(order);
-      const res = await storage.set(`order:${order.id}`, JSON.stringify({ ...order, emailed }));
-      if (!res) throw new Error("save failed");
-      // Decrease stock for each item ordered.
-      for (const item of cartItems) {
-        const current = products.find((p) => p.id === item.id);
-        if (current) {
-          const updated = { ...current, stock: Math.max(0, (current.stock ?? 0) - item.qty) };
-          await storage.set(`product:${current.id}`, JSON.stringify(updated));
-        }
-      }
+      // The server takes the stock and saves the order in one go, so two people
+      // can't both buy the last one.
+      await placeOrder({ ...order, emailed });
       refreshProducts();
       setSubmitted(true);
       setCart({});
-    } catch {
-      setError("Something went wrong sending your order — please try again.");
+    } catch (e) {
+      if (e.data?.error === "out_of_stock") {
+        const gone = e.data.item || "an item";
+        setError(
+          e.data.remaining > 0
+            ? `Sorry — only ${e.data.remaining} of the ${gone} left. Please lower the quantity.`
+            : `Sorry — the ${gone} just sold out. Please remove it from your cart.`
+        );
+        refreshProducts();
+      } else {
+        setError("Something went wrong sending your order — please try again.");
+      }
     }
     setSubmitting(false);
-  };
-
-  const markFulfilled = async (order) => {
-    try {
-      const updated = { ...order, status: order.status === "fulfilled" ? "new" : "fulfilled" };
-      await storage.set(`order:${order.id}`, JSON.stringify(updated));
-      refreshOrders();
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const saveProduct = async (product) => {
-    const toSave = { ...product, createdAt: product.createdAt || Date.now() };
-    await storage.set(`product:${product.id}`, JSON.stringify(toSave));
-    refreshProducts();
-  };
-
-  const deleteProduct = async (id) => {
-    try {
-      await storage.delete(`product:${id}`);
-      refreshProducts();
-    } catch {
-      /* ignore */
-    }
   };
 
   return (
@@ -387,18 +323,10 @@ export default function App() {
       </header>
 
       {view === "home" && <HomeView products={products} onShopNow={() => setView("shop")} />}
-      {view === "shop" && <ShopView products={products} loading={productsLoading} onAdd={addToCart} />}
-      {view === "manage" && (
-        <ManageView
-          products={products}
-          orders={orders}
-          ordersLoading={ordersLoading}
-          onToggleOrder={markFulfilled}
-          onRefreshOrders={refreshOrders}
-          onSaveProduct={saveProduct}
-          onDeleteProduct={deleteProduct}
-        />
+      {view === "shop" && (
+        <ShopView products={products} loading={productsLoading} failed={productsFailed} onAdd={addToCart} />
       )}
+      {view === "manage" && <ManageView products={products} onProductsChanged={refreshProducts} />}
 
       {/* Cart drawer */}
       {cartOpen && (
@@ -664,7 +592,7 @@ function HomeView({ products, onShopNow }) {
   );
 }
 
-function ShopView({ products, loading, onAdd }) {
+function ShopView({ products, loading, failed, onAdd }) {
   return (
     <main className="max-w-5xl mx-auto px-5 pb-24">
       <section className="pt-10 pb-6 text-center relative">
@@ -684,6 +612,10 @@ function ShopView({ products, loading, onAdd }) {
       {loading ? (
         <p className="font-body text-sm text-center font-medium" style={{ color: "#8A7C6A" }}>
           Loading...
+        </p>
+      ) : failed ? (
+        <p className="font-body text-sm text-center font-medium" style={{ color: "#C4553E" }}>
+          The shop couldn't load just now. Please refresh in a moment.
         </p>
       ) : products.length === 0 ? (
         <p className="font-body text-sm text-center font-medium" style={{ color: "#8A7C6A" }}>
@@ -736,11 +668,68 @@ function ShopView({ products, loading, onAdd }) {
   );
 }
 
-function ManageView({ products, orders, ordersLoading, onToggleOrder, onRefreshOrders, onSaveProduct, onDeleteProduct }) {
+function ManageView({ products, onProductsChanged }) {
   const [unlocked, setUnlocked] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
+  const [checking, setChecking] = useState(false);
   const [tab, setTab] = useState("products");
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  const loadOrders = useCallback(async () => {
+    if (!unlocked) return;
+    setOrdersLoading(true);
+    try {
+      setOrders(await fetchOrders(pin));
+    } catch {
+      setOrders([]);
+    }
+    setOrdersLoading(false);
+  }, [unlocked, pin]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  // The PIN is checked by the server, so it never ships inside the site's code.
+  const tryUnlock = async () => {
+    setChecking(true);
+    setPinError("");
+    try {
+      if (await checkPin(pin)) {
+        setUnlocked(true);
+      } else {
+        setPinError("That's not the right PIN.");
+      }
+    } catch {
+      setPinError("Couldn't reach the shop database — try again in a moment.");
+    }
+    setChecking(false);
+  };
+
+  const toggleOrder = async (order) => {
+    try {
+      await setOrderStatus(order.id, order.status === "fulfilled" ? "new" : "fulfilled", pin);
+      loadOrders();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onSaveProduct = async (product) => {
+    await saveProduct(product, pin);
+    onProductsChanged();
+  };
+
+  const onDeleteProduct = async (id) => {
+    try {
+      await deleteProduct(id, pin);
+      onProductsChanged();
+    } catch {
+      /* ignore */
+    }
+  };
 
   if (!unlocked) {
     return (
@@ -766,18 +755,12 @@ function ManageView({ products, orders, ordersLoading, onToggleOrder, onRefreshO
           </p>
         )}
         <button
-          onClick={() => {
-            if (pin === ADMIN_PIN) {
-              setUnlocked(true);
-              setPinError("");
-            } else {
-              setPinError("That's not the right PIN.");
-            }
-          }}
-          className="w-full py-2.5 rounded-full font-body font-semibold text-sm"
+          onClick={tryUnlock}
+          disabled={checking || !pin}
+          className="w-full py-2.5 rounded-full font-body font-semibold text-sm disabled:opacity-60"
           style={{ background: "#4F7A3D", color: "#FFFDF7" }}
         >
-          Unlock
+          {checking ? "Checking..." : "Unlock"}
         </button>
       </main>
     );
@@ -809,7 +792,7 @@ function ManageView({ products, orders, ordersLoading, onToggleOrder, onRefreshO
 
       {tab === "products" && <ProductsTab products={products} onSave={onSaveProduct} onDelete={onDeleteProduct} />}
       {tab === "orders" && (
-        <OrdersTab orders={orders} loading={ordersLoading} onToggle={onToggleOrder} onRefresh={onRefreshOrders} />
+        <OrdersTab orders={orders} loading={ordersLoading} onToggle={toggleOrder} onRefresh={loadOrders} />
       )}
       {tab === "popular" && <PopularTab orders={orders} products={products} />}
     </main>
