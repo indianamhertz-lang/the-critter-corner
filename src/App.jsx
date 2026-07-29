@@ -270,14 +270,10 @@ export default function App() {
       status: "new",
     };
     try {
-      // Email it first — that's the copy Indiana actually receives. A saved
-      // order nobody sees is worse than telling the customer to try again.
+      // Try to email it, but never block the customer on that — the order is
+      // always accepted. If the email didn't go through it's flagged on the
+      // order so the Manage page can surface it instead.
       const emailed = await emailOrder(order);
-      if (!emailed && emailConfigured()) {
-        setError("We couldn't send your order just now — please check your connection and try again.");
-        setSubmitting(false);
-        return;
-      }
       const res = await storage.set(`order:${order.id}`, JSON.stringify({ ...order, emailed }));
       if (!res) throw new Error("save failed");
       // Decrease stock for each item ordered.
@@ -346,7 +342,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setView("home")}
-              className="hidden sm:block font-body text-sm font-semibold px-3 py-2 rounded-full"
+              className="font-body text-sm font-semibold px-3 py-2 rounded-full"
               style={{ color: view === "home" ? "#4F7A3D" : "#8A7C6A" }}
             >
               Home
@@ -555,7 +551,7 @@ export default function App() {
                   </div>
                   <p className="font-body text-xs font-medium" style={{ color: "#8A7C6A" }}>
                     Handmade note: every critter is crocheted by hand, so the size, shape and color
-                    of yours will vary slightly from the photo.
+                    of yours may vary slightly from the photo.
                   </p>
                   {error && (
                     <p className="font-body text-xs font-semibold" style={{ color: "#C4553E" }}>
@@ -656,7 +652,7 @@ function HomeView({ products, onShopNow }) {
             Good to know
           </p>
           <ul className="font-body text-sm font-medium space-y-1.5" style={{ color: "#6B5C4C" }}>
-            <li>• Everything is made by hand, so sizes, colors and shapes vary a little from piece to piece — no two are exactly alike.</li>
+            <li>• Everything is made by hand, so sizes, colors and shapes may vary a little from piece to piece — no two are exactly alike.</li>
             <li>• Photos show an example of each critter, not the exact one you'll receive.</li>
             <li>• Everything ships by mail.</li>
             <li>• Sold-out items may come back in stock — check back!</li>
@@ -679,7 +675,7 @@ function ShopView({ products, loading, onAdd }) {
           Tap "Add" to send one home with you.
         </p>
         <p className="font-body text-xs font-medium mt-3 max-w-md mx-auto relative z-10" style={{ color: "#8A7C6A" }}>
-          Every piece is crocheted by hand, so sizes and colors vary slightly — yours will be
+          Every piece is crocheted by hand, so sizes and colors may vary slightly — yours will be
           one of a kind, not identical to the photo.
         </p>
       </section>
@@ -995,9 +991,22 @@ function OrdersTab({ orders, loading, onToggle, onRefresh }) {
   const newOrders = orders.filter((o) => o.status !== "fulfilled");
   const fulfilled = orders.filter((o) => o.status === "fulfilled");
   const revenue = orders.reduce((s, o) => s + (o.total || 0), 0);
+  // Orders the customer placed fine but that never made it to the inbox.
+  const notEmailed = orders.filter((o) => o.emailed === false);
 
   return (
     <div>
+      {notEmailed.length > 0 && (
+        <div className="rounded-xl border-2 p-3 mb-4" style={{ borderColor: "#C4553E", background: "#FDEDE7" }}>
+          <p className="font-body text-xs font-bold mb-1" style={{ color: "#C4553E" }}>
+            {notEmailed.length} order{notEmailed.length === 1 ? "" : "s"} never reached your inbox
+          </p>
+          <p className="font-body text-xs font-medium" style={{ color: "#8A5B4C" }}>
+            These came through on the shop but the email didn't send, so they're only listed here:{" "}
+            {notEmailed.map((o) => o.name).join(", ")}. Worth writing the details down.
+          </p>
+        </div>
+      )}
       {!emailConfigured() && (
         <div className="rounded-xl border-2 p-3 mb-4" style={{ borderColor: "#C4553E", background: "#FDEDE7" }}>
           <p className="font-body text-xs font-bold mb-1" style={{ color: "#C4553E" }}>
