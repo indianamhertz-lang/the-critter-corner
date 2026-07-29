@@ -569,7 +569,9 @@ export default function App() {
 
 function ProductPhoto({ product, size = 40 }) {
   if (product.photo) {
-    return <img src={product.photo} alt={product.name} className="w-full h-full object-cover" />;
+    // Product shots are square cut-outs on white, so contain them rather than
+    // cropping — otherwise flippers, keyrings and tails get sliced off.
+    return <img src={product.photo} alt={product.name} className="w-full h-full object-contain" />;
   }
   return (
     <div className="w-full h-full flex items-center justify-center" style={{ background: product.bg || "#DCE8D0" }}>
@@ -610,7 +612,7 @@ function HomeView({ products, onShopNow }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {featured.map((p) => (
               <div key={p.id} className="rounded-3xl overflow-hidden border-2 flex flex-col" style={{ borderColor: "#4F7A3D", background: "#FFFFFF" }}>
-                <div className="h-32">
+                <div className="aspect-square" style={{ background: "#FFFFFF" }}>
                   <ProductPhoto product={p} size={44} />
                 </div>
                 <div className="p-3">
@@ -678,7 +680,7 @@ function ShopView({ products, loading, onAdd }) {
             const soldOut = (p.stock ?? 0) <= 0;
             return (
               <div key={p.id} className="rounded-3xl overflow-hidden border-2 flex flex-col" style={{ borderColor: "#4F7A3D", background: "#FFFFFF", opacity: soldOut ? 0.55 : 1 }}>
-                <div className="h-28 relative">
+                <div className="aspect-square relative" style={{ background: "#FFFFFF" }}>
                   <ProductPhoto product={p} size={40} />
                   {soldOut && (
                     <span
