@@ -182,6 +182,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [openProduct, setOpenProduct] = useState(null);
   const [form, setForm] = useState({ name: "", contact: "", payMethod: "venmo", delivery: "mail", notes: "" });
 
   // Products, stock and orders all live in the shared database now, so the
@@ -331,9 +332,25 @@ export default function App() {
 
       {view === "home" && <HomeView products={products} onShopNow={() => setView("shop")} />}
       {view === "shop" && (
-        <ShopView products={products} loading={productsLoading} failed={productsFailed} onAdd={addToCart} />
+        <ShopView
+          products={products}
+          loading={productsLoading}
+          failed={productsFailed}
+          onAdd={addToCart}
+          onOpen={setOpenProduct}
+        />
       )}
       {view === "manage" && <ManageView products={products} onProductsChanged={refreshProducts} />}
+
+      {/* Product details */}
+      {openProduct && products.find((p) => p.id === openProduct) && (
+        <ProductDetail
+          product={products.find((p) => p.id === openProduct)}
+          inCart={cart[openProduct] || 0}
+          onAdd={addToCart}
+          onClose={() => setOpenProduct(null)}
+        />
+      )}
 
       {/* Cart drawer */}
       {cartOpen && (
@@ -599,7 +616,129 @@ function HomeView({ products, onShopNow }) {
   );
 }
 
-function ShopView({ products, loading, failed, onAdd }) {
+// Catalog carries the extra photo angles and the longer write-up; the database
+// only tracks the things that change, like price and stock.
+const detailsFor = (id) => CATALOG.find((c) => c.id === id) || {};
+
+function ProductDetail({ product, onClose, onAdd, inCart }) {
+  const extra = detailsFor(product.id);
+  const photos = extra.photos?.length ? extra.photos : [product.photo].filter(Boolean);
+  const [index, setIndex] = useState(0);
+  const soldOut = (product.stock ?? 0) <= 0;
+  const low = !soldOut && product.stock <= LOW_STOCK_THRESHOLD;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") setIndex((i) => (i + 1) % photos.length);
+      if (e.key === "ArrowLeft") setIndex((i) => (i - 1 + photos.length) % photos.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, photos.length]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-4 overflow-auto">
+      <div className="absolute inset-0" style={{ background: "rgba(59,46,35,0.6)" }} onClick={onClose} />
+      <div
+        className="relative w-full max-w-3xl sm:rounded-3xl border-2 my-0 sm:my-6"
+        style={{ background: "#FFFBF3", borderColor: "#4F7A3D" }}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 p-2 rounded-full"
+          style={{ background: "rgba(255,251,243,0.9)" }}
+          aria-label="Close"
+        >
+          <X size={20} color="#3B2E23" />
+        </button>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 sm:gap-5">
+          <div className="p-4 sm:p-5">
+            <div className="rounded-2xl overflow-hidden border-2" style={{ borderColor: "#4F7A3D", background: "#FFFFFF" }}>
+              <div className="aspect-square">
+                <img src={photos[index]} alt={product.name} className="w-full h-full object-cover" />
+              </div>
+            </div>
+
+            {photos.length > 1 && (
+              <>
+                <div className="flex items-center justify-between mt-2">
+                  <button
+                    onClick={() => setIndex((i) => (i - 1 + photos.length) % photos.length)}
+                    className="font-body text-xs font-semibold px-3 py-1.5 rounded-full border-2"
+                    style={{ borderColor: "#4F7A3D", color: "#4F7A3D" }}
+                  >
+                    ‹ Prev
+                  </button>
+                  <span className="font-mono text-xs" style={{ color: "#8A7C6A" }}>
+                    {index + 1} / {photos.length}
+                  </span>
+                  <button
+                    onClick={() => setIndex((i) => (i + 1) % photos.length)}
+                    className="font-body text-xs font-semibold px-3 py-1.5 rounded-full border-2"
+                    style={{ borderColor: "#4F7A3D", color: "#4F7A3D" }}
+                  >
+                    Next ›
+                  </button>
+                </div>
+                <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+                  {photos.map((src, i) => (
+                    <button
+                      key={src}
+                      onClick={() => setIndex(i)}
+                      className="rounded-lg overflow-hidden shrink-0 border-2"
+                      style={{ borderColor: i === index ? "#4F7A3D" : "#E4DCC8", width: 56, height: 56 }}
+                    >
+                      <img src={src} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="p-4 sm:p-5 sm:pl-0 flex flex-col">
+            <h2 className="font-display text-4xl font-bold leading-tight" style={{ color: "#3B2E23" }}>
+              {product.name}
+            </h2>
+            <p className="font-mono text-lg mt-1" style={{ color: "#D9A441" }}>
+              ${product.price}
+            </p>
+
+            <p className="font-body text-sm font-medium mt-3" style={{ color: "#6B5C4C" }}>
+              {extra.story || product.blurb}
+            </p>
+
+            <ul className="font-body text-xs font-medium mt-4 space-y-1.5" style={{ color: "#8A7C6A" }}>
+              <li>• Crocheted by hand by Indiana</li>
+              <li>• Sizes, colors and shapes may vary slightly — yours won't be identical to the photo</li>
+              <li>• Spot clean gently; lay flat to dry</li>
+              <li>• Ships by mail</li>
+            </ul>
+
+            <p className="font-body text-xs font-bold mt-4" style={{ color: soldOut ? "#C4553E" : low ? "#C4553E" : "#4F7A3D" }}>
+              {soldOut ? "Sold out for now — check back!" : low ? `Only ${product.stock} left` : `${product.stock} in stock`}
+            </p>
+
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={() => onAdd(product.id)}
+                disabled={soldOut || inCart >= product.stock}
+                className="flex-1 py-2.5 rounded-full font-body font-semibold text-sm disabled:opacity-50"
+                style={{ background: soldOut ? "#8A7C6A" : "#4F7A3D", color: "#FFFDF7" }}
+              >
+                {soldOut ? "Sold out" : inCart > 0 ? `Add another (${inCart} in cart)` : "Add to cart"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShopView({ products, loading, failed, onAdd, onOpen }) {
   return (
     <main className="max-w-5xl mx-auto px-5 pb-24">
       <section className="pt-10 pb-6 text-center relative">
@@ -630,7 +769,7 @@ function ShopView({ products, loading, failed, onAdd }) {
             const soldOut = (p.stock ?? 0) <= 0;
             return (
               <div key={p.id} className="rounded-3xl overflow-hidden border-2 flex flex-col" style={{ borderColor: "#4F7A3D", background: "#FFFFFF", opacity: soldOut ? 0.55 : 1 }}>
-                <div className="h-28 relative">
+                <button onClick={() => onOpen(p.id)} className="h-28 relative block w-full" aria-label={`See ${p.name}`}>
                   <ProductPhoto product={p} size={40} />
                   {soldOut && (
                     <span
@@ -640,14 +779,23 @@ function ShopView({ products, loading, failed, onAdd }) {
                       SOLD OUT
                     </span>
                   )}
-                </div>
+                </button>
                 <div className="p-3 flex flex-col flex-1">
-                  <h3 className="font-display text-xl font-semibold leading-snug" style={{ color: "#3B2E23" }}>
-                    {p.name}
-                  </h3>
+                  <button onClick={() => onOpen(p.id)} className="text-left">
+                    <h3 className="font-display text-xl font-semibold leading-snug" style={{ color: "#3B2E23" }}>
+                      {p.name}
+                    </h3>
+                  </button>
                   <p className="font-body text-xs mt-1 flex-1 font-medium" style={{ color: "#8A7C6A" }}>
                     {p.blurb}
                   </p>
+                  <button
+                    onClick={() => onOpen(p.id)}
+                    className="font-body text-xs font-semibold mt-1 text-left underline"
+                    style={{ color: "#4F7A3D" }}
+                  >
+                    See details & photos
+                  </button>
                   <div className="flex items-center justify-between mt-3">
                     <span className="font-mono text-sm" style={{ color: "#D9A441" }}>
                       ${p.price}

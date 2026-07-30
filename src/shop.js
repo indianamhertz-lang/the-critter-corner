@@ -20,11 +20,22 @@ async function req(path, { method = "GET", body, pin } = {}) {
   return data;
 }
 
-export const fetchProducts = () => req("/api/products").then((d) => d.products || []);
+export const fetchProducts = () =>
+  req("/api/products").then((d) => {
+    // A dev server with no API returns the HTML page with a 200, so check the
+    // shape rather than trusting the status — otherwise an empty shop looks
+    // like a real (but empty) answer and the catalog fallback never runs.
+    if (!Array.isArray(d.products)) throw new Error("no product list in response");
+    return d.products;
+  });
 
 export const placeOrder = (order) => req("/api/orders", { method: "POST", body: order });
 
-export const fetchOrders = (pin) => req("/api/orders", { pin }).then((d) => d.orders || []);
+export const fetchOrders = (pin) =>
+  req("/api/orders", { pin }).then((d) => {
+    if (!Array.isArray(d.orders)) throw new Error("no order list in response");
+    return d.orders;
+  });
 
 export const setOrderStatus = (id, status, pin) =>
   req("/api/orders", { method: "PATCH", body: { id, status }, pin });
