@@ -4,41 +4,41 @@ const target = () => (FORMSUBMIT_ALIAS.trim() || ORDER_EMAIL.trim());
 
 export const emailConfigured = () => target().length > 0;
 
-function orderText(order) {
-  const lines = order.items.map((i) => `  ${i.qty} x ${i.name} — $${(i.qty * i.price).toFixed(2)}`);
-  return [
-    `Contact:   ${order.contact}`,
-    `Paying by: ${order.payMethod}`,
-    "",
-    "Items:",
-    ...lines,
-    "",
-    `TOTAL: $${order.total.toFixed(2)}`,
-    "",
-    order.notes ? `Notes from customer:\n  ${order.notes}` : "No notes.",
-    "",
-    `Placed:   ${new Date(order.createdAt).toLocaleString()}`,
-    `Order ID: ${order.id}`,
-  ].join("\n");
-}
+const money = (n) => `$${Number(n || 0).toFixed(2)}`;
 
 // Emails the order to the shop owner. Resolves true when it was accepted,
 // false otherwise — the caller decides what to tell the customer.
 export async function emailOrder(order) {
   if (!emailConfigured()) return false;
+
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  // Each item gets its own field, because email clients collapse line breaks
+  // inside a single field and the list is the whole point of the email.
+  const itemFields = {};
+  items.forEach((i, n) => {
+    itemFields[`Item ${n + 1}`] = `${i.qty} x ${i.name} — ${money(i.qty * i.price)} (${money(i.price)} each)`;
+  });
+
+  const summary = items.map((i) => `${i.qty} x ${i.name}`).join(" • ");
+
   try {
     const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(target())}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        _subject: `New Critter Corner order — ${order.name} — $${order.total.toFixed(2)}`,
+        _subject: `New order — ${summary} — ${money(order.total)} — ${order.name}`,
         _template: "table",
-        // Skip FormSubmit's own captcha page; this is a background request.
         _captcha: "false",
-        Name: order.name,
+        Ordered: summary,
+        ...itemFields,
+        Total: money(order.total),
+        Customer: order.name,
         Contact: order.contact,
-        Total: `$${order.total.toFixed(2)}`,
-        Order: orderText(order),
+        "Paying by": order.payMethod || "not given",
+        Notes: order.notes?.trim() ? order.notes.trim() : "(none)",
+        Placed: new Date(order.createdAt || Date.now()).toLocaleString(),
+        "Order ID": order.id,
       }),
     });
     const data = await res.json().catch(() => ({}));
